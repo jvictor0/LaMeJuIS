@@ -1,0 +1,23 @@
+{
+  "slug": "LogicMatrix",
+  "name": "LogicMatrix",
+  "version": "2.0.0",
+  "license": "MIT",
+  "brand": "SmartGridMusic",
+  "author": "Joyo Victor",
+  "authorEmail": "joyofresh@gmail.com",
+  "authorUrl": "",
+  "pluginUrl": "",
+  "manualUrl": "",
+  "sourceUrl": "",
+  "donateUrl": "",
+  "changelogUrl": "",
+  "modules": [
+    {
+      "slug": "LogicMatrix",
+      "name": "LogicMatrix",
+      "description": "Logic Matrix and Just Intonation Sequencer",
+      "tags": []
+    }
+  ]
+}
