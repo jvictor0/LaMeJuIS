@@ -86,6 +86,11 @@ struct LogicMatrixWidget : ModuleWidget
                    x_outputJackStartYMM + 5 * x_hp + outputId * x_outputJackDeltaYMM);
     }
 
+    Vec GetModeKnobMM()
+    {
+        return Vec(x_hp * (x_inputJackHP + 1),
+                   x_inputJackStartYMM - 3 * x_hp);
+    }
     
 	LogicMatrixWidget(LogicMatrix* module)
     {
@@ -154,6 +159,11 @@ struct LogicMatrixWidget : ModuleWidget
                           module,
                           GetTriggerOutputId(i)));
         }
+
+        addParam(createParamCentered<RoundBlackSnapKnob>(
+                     mm2px(GetModeKnobMM()),
+                     module,
+                     GetModeKnobId()));
 	}
 };
 

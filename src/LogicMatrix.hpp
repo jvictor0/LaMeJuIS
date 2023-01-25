@@ -6,11 +6,11 @@ struct LogicMatrix : Module
 {
     enum class Mode : char
     {
-        Direct,
-        Independent,
-        OneVoice,
-        ThreeVoice,
-        Chord
+        Direct = 0,
+        Independent = 1,
+        OneVoice = 2,
+        ThreeVoice = 3,
+        Chord = 4
     };
 
     enum class InputOverride : char
@@ -20,7 +20,7 @@ struct LogicMatrix : Module
         OverrideLow
     };
 
-    static bool ApplyOverride(InputOverride ovr, bool value, bool* overrideHappened)
+    static bool ApplyOverride(InputOverride ovr, bool value)
     {
         bool ret = false;
         switch (ovr)
@@ -28,11 +28,6 @@ struct LogicMatrix : Module
             case InputOverride::DontOverride: return value;
             case InputOverride::OverrideHigh: ret = true; break;
             case InputOverride::OverrideLow: ret = false; break;
-        }
-
-        if (ret != value)
-        {
-            *overrideHappened = true;
         }
 
         return ret;
@@ -78,9 +73,9 @@ struct LogicMatrix : Module
         
         void SetValue(Input* prev);
 
-        bool GetValue(InputOverride ovr, bool* overrideHappened)
+        bool GetValue(InputOverride ovr)
         {
-            return ApplyOverride(ovr, m_value, overrideHappened);
+            return ApplyOverride(ovr, m_value);
         }
     };
 
@@ -108,6 +103,12 @@ struct LogicMatrix : Module
                 case 1: return m_ovr1;
                 default: return InputOverride::DontOverride;
             }
+        }
+
+        bool HasOverride()
+        {
+            return m_ovr0 == InputOverride::DontOverride &&
+                m_ovr1 == InputOverride::DontOverride;
         }
         
         InputOverride m_ovr0;
@@ -137,7 +138,7 @@ struct LogicMatrix : Module
             return GetSwitchVal() == SwitchVal::Muted;
         }
         
-        bool GetValue(Input* input, InputOverride ovr, bool* overrideHappened);
+        bool GetValue(Input* input, InputOverride ovr);
     };
 
     struct LogicEquation
@@ -192,9 +193,12 @@ struct LogicMatrix : Module
             return value;
         }
 
+        // Up is output zero but input id 2, so invert.
+        //
         size_t GetOutputTarget()
         {
-            return static_cast<size_t>(GetSwitchVal());
+            using namespace LogicMatrixConstants;
+            return x_numOutputs - static_cast<size_t>(GetSwitchVal()) - 1;
         }
         
         LogicMatrix::MatrixElement m_elements[LogicMatrixConstants::x_numInputs];
@@ -218,6 +222,26 @@ struct LogicMatrix : Module
 
     MatrixEvalResult EvalMatrix(InputOverrides ovrs);
 
+    float ComputePitch(MatrixEvalResult evalResult)
+    {
+        using namespace LogicMatrixConstants;
+        float result = 0;
+        for (size_t i = 0; i < x_numOutputs; ++i)
+        {
+            if (m_outputs[i].IsPitch())
+            {
+                result += m_outputs[i].GetValue(evalResult.m_high[i], evalResult.m_total[i]);
+            }
+        }
+
+        return result;
+    }
+
+    float EvalMatrixAndComputePitch(InputOverrides ovrs)
+    {
+        return ComputePitch(EvalMatrix(ovrs));
+    }
+    
     struct Output
     {
         enum class Interval
@@ -250,25 +274,45 @@ struct LogicMatrix : Module
         rack::engine::Param* m_intervalKnob = nullptr;
         rack::engine::Output* m_mainOut = nullptr;
         rack::engine::Output* m_triggerOut = nullptr;
+        rack::dsp::PulseGenerator m_pulseGen;
         float m_value = 0.0;
-        bool m_changedThisFrame = false;
 
         Interval GetInterval();
+
+        bool IsPitch()
+        {
+            Interval interval = GetInterval();
+            switch(interval)
+            {
+                case Interval::And:
+                case Interval::Or:
+                case Interval::Avg:
+                    return false;
+                default:
+                    return true;
+            }
+        }
         
         float GetValue(uint8_t high, uint8_t total);
 
-        void SetValue(float value)
+        void SetValue(float value, float dt)
         {
-            m_changedThisFrame = (value != m_value);
+            bool changedThisFrame = (value != m_value);
             m_value = value;
             m_mainOut->setVoltage(value);
+
+            if (changedThisFrame)
+            {
+                m_pulseGen.trigger();
+            }
+
+            m_triggerOut->setVoltage(m_pulseGen.process(dt) ? 5.f : 0.f);
         }
 
         void SetValueDirect(bool trigVal, float value)
         {
             // There is no trigger in direct mode, so set m_changedThisFrame to false
             //
-            m_changedThisFrame = false;
             m_value = value;
             m_triggerOut->setVoltage(trigVal ? 5.f : 0.f);
             m_mainOut->setVoltage(value);
@@ -285,13 +329,11 @@ struct LogicMatrix : Module
         }
     };
 
-    Mode GetMode()
-    {
-        return Mode::Direct;
-    }
+    Mode GetMode();
 
     void ProcessInputs();
-    void ProcessOutputs();
+    void ProcessOutputs(float dt);
+    
 	LogicMatrix();
 
     ~LogicMatrix()

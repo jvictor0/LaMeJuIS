@@ -56,9 +56,9 @@ LogicMatrix::MatrixElement::GetSwitchVal()
     return FloatToEnum<SwitchVal>(m_switch->getValue());
 }
 
-bool LogicMatrix::MatrixElement::GetValue(Input* input, InputOverride ovr, bool* overrideHappened)
+bool LogicMatrix::MatrixElement::GetValue(Input* input, InputOverride ovr)
 {
-    bool normalValue = input->GetValue(ovr, overrideHappened);
+    bool normalValue = input->GetValue(ovr);
     switch (GetSwitchVal())
     {
         case SwitchVal::Normal: return normalValue;
@@ -85,13 +85,12 @@ bool LogicMatrix::LogicEquation::GetValue(LogicMatrix::Input* inputArray, InputO
 
     size_t countHigh = 0;
     size_t countTotal = 0;
-    bool overrideHappened = false;
     for (size_t i = 0; i < x_numInputs; ++i)
-    {
+    {       
         if (!m_elements[i].IsMuted())
         {
             ++countTotal;
-            bool isHigh = m_elements[i].GetValue(&inputArray[i], ovrs.Get(i), &overrideHappened);
+            bool isHigh = m_elements[i].GetValue(&inputArray[i], ovrs.Get(i));
             if (isHigh)
             {
                 ++countHigh;
@@ -109,7 +108,7 @@ bool LogicMatrix::LogicEquation::GetValue(LogicMatrix::Input* inputArray, InputO
         case Operator::Majority: ret = (2 * countHigh > countTotal); break;
     }
 
-    if (!overrideHappened)
+    if (!ovrs.HasOverride())
     {
         m_light->setBrightness(ret ? 1.f : 0.f);
     }
@@ -156,6 +155,13 @@ float LogicMatrix::Output::GetValue(uint8_t high, uint8_t total)
     }
 }
 
+LogicMatrix::Mode
+LogicMatrix::GetMode()
+{
+    using namespace LogicMatrixConstants;      
+    return FloatToEnum<Mode>(params[GetModeKnobId()].getValue());
+}
+
 LogicMatrix::LogicMatrix()
 {
     using namespace LogicMatrixConstants;   
@@ -200,6 +206,8 @@ LogicMatrix::LogicMatrix()
             &outputs[GetMainOutputId(i)],
             &outputs[GetTriggerOutputId(i)]);
     }
+    
+    configParam(GetModeKnobId(), 0.f, 4.f, 0.f, "");
 }
 
 void LogicMatrix::ProcessInputs()
@@ -211,9 +219,12 @@ void LogicMatrix::ProcessInputs()
     }
 }
 
-void LogicMatrix::ProcessOutputs()
+void LogicMatrix::ProcessOutputs(float dt)
 {
     using namespace LogicMatrixConstants;
+
+    MatrixEvalResult evalResult = EvalMatrix(InputOverrides());
+
     Mode mode = GetMode();
     switch(mode)
     {
@@ -230,10 +241,96 @@ void LogicMatrix::ProcessOutputs()
                 m_equations[2 * i + 1].GetValueDirect(m_inputs, &high, &total);
                 m_outputs[i].SetValueDirect(trigVal, m_outputs[i].GetValue(high, total));
             }
+
+            break;
         }
-        
-        default:
+
+        case Mode::Independent:
         {
+            for (size_t i = 0; i < x_numOutputs; ++i)
+            {
+                m_outputs[i].SetValue(m_outputs[i].GetValue(evalResult.m_high[i], evalResult.m_total[i]), dt);
+            }
+
+            break;
+        }
+
+        case Mode::OneVoice:
+        {
+            // In one voice mode, the middle output will be set to the sum.  Set the other two to the average, for cool
+            // stepped voltages.
+                //
+            m_outputs[0].SetValue(5.0 * static_cast<float>(evalResult.m_high[0]) / evalResult.m_total[0], dt);
+            m_outputs[1].SetValue(ComputePitch(evalResult), dt);
+            m_outputs[2].SetValue(5.0 * static_cast<float>(evalResult.m_high[2]) / evalResult.m_total[2], dt);
+            break;
+        }
+
+        case Mode::ThreeVoice:
+        {
+            float leadPitch = EvalMatrixAndComputePitch(InputOverrides());
+            float bassPitch = 10.f;
+
+            // Set the bass equal to the lowest implicit chord tone.
+            //
+            for (InputOverride ovr0 : {InputOverride::OverrideLow, InputOverride::OverrideHigh})
+            {
+                for (InputOverride ovr1 : {InputOverride::OverrideLow, InputOverride::OverrideHigh})
+                {
+                    bassPitch = std::min<float>(bassPitch, EvalMatrixAndComputePitch(InputOverrides(ovr0, ovr1)));
+                }
+            }
+
+            // For the third voice, set it to the lower of the two, so long as that isn't the bass value (unless they both are).
+            // The bass value will of course be no larger than either of these.
+            //
+            float zeroOvrLow = EvalMatrixAndComputePitch(InputOverrides(InputOverride::OverrideLow, InputOverride::DontOverride));
+            float zeroOvrHigh = EvalMatrixAndComputePitch(InputOverrides(InputOverride::OverrideHigh, InputOverride::DontOverride));
+            float tenorPitch = zeroOvrLow == bassPitch ? zeroOvrHigh : std::min<float>(zeroOvrHigh, zeroOvrLow);
+
+            m_outputs[0].SetValue(bassPitch, dt);
+            m_outputs[1].SetValue(leadPitch, dt);
+            m_outputs[2].SetValue(tenorPitch, dt);
+            break;
+        }
+
+        case Mode::Chord:
+        {
+            float pitches[4];
+            size_t ix = 0;
+            for (InputOverride ovr0 : {InputOverride::OverrideLow, InputOverride::OverrideHigh})
+            {
+                for (InputOverride ovr1 : {InputOverride::OverrideLow, InputOverride::OverrideHigh})
+                {
+                    pitches[ix] = EvalMatrixAndComputePitch(InputOverrides(ovr0, ovr1));
+                    ++ix;
+                }
+            }
+
+            static const size_t x_numPitches = 4;
+            std::sort(pitches, pitches + x_numPitches);
+            bool usedPitches[] = {false, false, false, false};
+            m_outputs[0].SetValue(pitches[0], dt);
+            usedPitches[0] = true;
+            for (size_t i = 1; i < x_numOutputs; ++i)
+            {
+                size_t ixToUse = x_numPitches;
+                for (size_t j = 0; j < x_numPitches; ++j)
+                {
+                    if (!usedPitches[j] &&
+                        (ixToUse == x_numPitches ||
+                         std::abs(m_outputs[i].m_value - pitches[j]) <
+                         std::abs(m_outputs[i].m_value - pitches[ixToUse])))
+                    {
+                        ixToUse = j;                        
+                    }
+                }
+
+                usedPitches[ixToUse] = true;
+                m_outputs[i].SetValue(pitches[ixToUse], dt);
+            }
+
+            break;
         }
     }    
 }
@@ -241,5 +338,5 @@ void LogicMatrix::ProcessOutputs()
 void LogicMatrix::process(const ProcessArgs& args)
 {
     ProcessInputs();
-    ProcessOutputs();
+    ProcessOutputs(args.sampleTime);
 }

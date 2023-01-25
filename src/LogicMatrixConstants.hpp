@@ -9,7 +9,8 @@ namespace LogicMatrixConstants
         EquationSwitch = 2,
         EquationOperatorKnob = 3,
         OutputKnob = 4,
-        NumParamTypes = 5
+        ModeKnob = 5,
+        NumParamTypes = 6
     };
 
     static constexpr size_t x_numInputs = 5;
@@ -22,7 +23,8 @@ namespace LogicMatrixConstants
         x_numInputs * x_numEquations /*MatrixSwitch*/,
         x_numEquations /*EquationSwitch*/,
         x_numEquations /*EquationOperatorKnob*/,
-        x_numOutputs /*OutputKnob*/
+        x_numOutputs /*OutputKnob*/,
+        1 /*ModeKnob*/
     };
 
     static constexpr size_t x_paramStartPerType[] = {
@@ -31,7 +33,8 @@ namespace LogicMatrixConstants
         x_numParamsPerType[0] + x_numParamsPerType[1],
         x_numParamsPerType[0] + x_numParamsPerType[1] + x_numParamsPerType[2],
         x_numParamsPerType[0] + x_numParamsPerType[1] + x_numParamsPerType[2] + x_numParamsPerType[3],
-        x_numParamsPerType[0] + x_numParamsPerType[1] + x_numParamsPerType[2] + x_numParamsPerType[3] + x_numParamsPerType[4]
+        x_numParamsPerType[0] + x_numParamsPerType[1] + x_numParamsPerType[2] + x_numParamsPerType[3] + x_numParamsPerType[4],
+        x_numParamsPerType[0] + x_numParamsPerType[1] + x_numParamsPerType[2] + x_numParamsPerType[3] + x_numParamsPerType[4] + x_numParamsPerType[5]
     };
 
     static constexpr size_t GetParamId(ParamType paramType, size_t paramId)
@@ -64,9 +67,14 @@ namespace LogicMatrixConstants
         return GetParamId(ParamType::OutputKnob, outputId);
     }
 
+    static constexpr size_t GetModeKnobId()
+    {
+        return GetParamId(ParamType::ModeKnob, 0);
+    }
+
     static constexpr size_t GetNumParams()
     {
-        return x_paramStartPerType[5];
+        return x_paramStartPerType[static_cast<size_t>(ParamType::NumParamTypes)];
     }
 
     enum class InputType : int
