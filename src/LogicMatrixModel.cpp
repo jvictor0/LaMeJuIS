@@ -4,94 +4,94 @@ struct LogicMatrixWidget : ModuleWidget
 {
     static constexpr float x_hp = 5.08;
 
-    static constexpr float x_inputJackHP = 1.0;
-    static constexpr float x_inputJackStartYMM = 21.82;
-    static constexpr float x_inputJackDeltaYMM = 20.32;
-    static constexpr float x_inputLightDeltaYMM = 10.16;
+    static constexpr float x_jackLightOffsetHP = 1.0;
+    static constexpr float x_jackStartYHP = 4.25;
+    static constexpr float x_jackSpacingHP = 3.0;
 
-    static constexpr float x_inputMuteSwitchXHP = 2.5;
-    
-    static constexpr float x_matrixSwitchStartXHP = 4.5;
-    static constexpr float x_matrixSwitchDeltaXHP = 1.0;
-    static constexpr float x_matrixSwitchStartYMM = 21.82;
-    static constexpr float x_matrixSwitchDeltaYMM = 20.465;
+    static constexpr float x_firstMatrixSwitchXHP = 15.0;
+    static constexpr float x_firstMatrixSwitchYHP = 3.5;
+    static constexpr float x_switchSpacingXHP = 1.5;
+    static constexpr float x_rowYSpacing = 3.5;
 
-    static constexpr float x_equationOperatorKnobXHP = 11.5;
-    static constexpr float x_equationSwitchXHP = 14;
+    static constexpr float x_operationKnobXHP = 25.25;
+    static constexpr float x_firstOperatorKnobYHP = 3.25;
 
-    static constexpr float x_outputKnobXHP = 18;
-    static constexpr float x_outputJackStartYMM = 21.82;
-    static constexpr float x_outputJackDeltaYMM = 40.64;
-    static constexpr float x_outputJackXHP = 19;
+    static constexpr float x_operationSwitchXHP = 27.5;
+
+    static constexpr float x_firstKnobMatrixXHP = 31.75;
+    static constexpr float x_firstKnobMatrixYHP = 3.50;
+    static constexpr float x_knobMatrixSpacingXHP = 4.5;
+    static constexpr float x_knobMatrixSpacingYHP = 4.0;
+
+    static constexpr float x_firstCoMuteXHP = 31.0;
+    static constexpr float x_firstCoMuteYHP = 16.0;
 
     Vec GetInputJackMM(size_t inputId)
     {
-        return Vec(x_hp * x_inputJackHP,
-                   x_inputJackStartYMM + inputId * x_inputJackDeltaYMM);
+        return Vec(x_hp,
+                   x_hp * (x_jackStartYHP + inputId * x_jackSpacingHP));
     }
 
-    Vec GetInputLightMM(size_t inputId)
+    Vec JackToLight(Vec jackPos)
     {
-        return Vec(x_hp * x_inputJackHP,
-                   x_inputJackStartYMM + inputId * x_inputJackDeltaYMM + x_inputLightDeltaYMM);
+        return jackPos.plus(Vec(x_hp * x_jackLightOffsetHP, - x_hp * x_jackLightOffsetHP));
     }
 
-    Vec GetInputMuteSwitchMM(size_t inputId)
+    Vec GetOperationOutputJackMM(size_t operationId)
     {
-        return Vec(x_hp * x_inputMuteSwitchXHP,
-                   x_inputJackStartYMM + inputId * x_inputJackDeltaYMM + x_inputLightDeltaYMM);
+        return GetInputJackMM(operationId).plus(Vec(x_hp * x_jackSpacingHP, 0));
+    }
+
+    Vec GetMainOutputJackMM(size_t accumulatorId)
+    {
+        return GetInputJackMM(2 * accumulatorId).plus(Vec(2 * x_hp * x_jackSpacingHP, 0));
+    }
+
+    Vec GetTriggerOutputJackMM(size_t accumulatorId)
+    {
+        return GetInputJackMM(2 * accumulatorId + 1).plus(Vec(2 * x_hp * x_jackSpacingHP, 0));
+    }
+
+    Vec GetCVOutputJackMM(size_t accumulatorId)
+    {
+        return GetInputJackMM(accumulatorId).plus(Vec(3 * x_hp * x_jackSpacingHP, 0));
+    }
+
+    Vec GetIntervalInputJackMM(size_t accumulatorId)
+    {
+        return GetInputJackMM(accumulatorId + 3).plus(Vec(3 * x_hp * x_jackSpacingHP, 0));
     }
     
-    Vec GetMatrixSwitchMM(size_t inputId, size_t equationId)
+    Vec GetMatrixSwitchMM(size_t inputId, size_t operationId)
     {
-        return Vec(x_hp * (x_matrixSwitchStartXHP + inputId * x_matrixSwitchDeltaXHP),
-                   x_matrixSwitchStartYMM + equationId * x_matrixSwitchDeltaYMM);
+        return Vec(x_hp * (x_firstMatrixSwitchXHP + inputId * x_switchSpacingXHP),
+                   x_hp * (x_firstMatrixSwitchYHP + operationId * x_rowYSpacing));
     }
 
-    Vec GetEquationOperatorKnobMM(size_t equationId)
+    Vec GetOperatorKnobMM(size_t operationId)
     {
-        return Vec(x_hp * x_equationOperatorKnobXHP,
-                   x_matrixSwitchStartYMM + equationId * x_matrixSwitchDeltaYMM);
+        return Vec(x_hp * x_operationKnobXHP,
+                   x_hp * (x_firstOperatorKnobYHP + operationId * x_rowYSpacing));
     }
 
-    Vec GetEquationOperatorSwitchMM(size_t equationId)
+    Vec GetOperationSwitchMM(size_t operationId)
     {
-        return Vec(x_hp * x_equationSwitchXHP,
-                   x_matrixSwitchStartYMM + equationId * x_matrixSwitchDeltaYMM);
+        return Vec(x_hp * x_operationSwitchXHP,
+                   x_hp * (x_firstMatrixSwitchYHP + operationId * x_rowYSpacing));
     }
 
-    // Put the equation light 2hp above the equation switch?
-    //
-    Vec GetEquationLightMM(size_t equationId)
+    Vec GetKnobMatrixMM(size_t knobColumn, size_t accumulatorId)
     {
-        return Vec(x_hp * x_equationSwitchXHP,
-                   x_matrixSwitchStartYMM + equationId * x_matrixSwitchDeltaYMM - 2 * x_hp);        
+        return Vec(x_hp * (x_firstKnobMatrixXHP + knobColumn * x_knobMatrixSpacingXHP),
+                   x_hp * (x_firstKnobMatrixYHP + accumulatorId * x_knobMatrixSpacingYHP));
     }
 
-    Vec GetMainOutputJackMM(size_t outputId)
+    Vec GetCoMuteSwitchMM(size_t inputId, size_t accumulatorId)
     {
-        return Vec(x_hp * x_outputJackXHP,
-                   x_outputJackStartYMM + outputId * x_outputJackDeltaYMM);
+        return Vec(x_hp * (x_firstCoMuteXHP + inputId * x_switchSpacingXHP),
+                   x_hp * (x_firstCoMuteYHP + accumulatorId * x_rowYSpacing));
     }
 
-    Vec GetTriggerOutputJackMM(size_t outputId)
-    {
-        return Vec(x_hp * x_outputJackXHP,
-                   x_outputJackStartYMM + 2 * x_hp + outputId * x_outputJackDeltaYMM);
-    }
-
-    Vec GetOutputKnobMM(size_t outputId)
-    {
-        return Vec(x_hp * x_outputJackXHP,
-                   x_outputJackStartYMM + 5 * x_hp + outputId * x_outputJackDeltaYMM);
-    }
-
-    Vec GetModeKnobMM()
-    {
-        return Vec(x_hp * (x_inputJackHP + 1),
-                   x_inputJackStartYMM - 3 * x_hp);
-    }
-    
 	LogicMatrixWidget(LogicMatrix* module)
     {
         using namespace LogicMatrixConstants;   
@@ -112,44 +112,49 @@ struct LogicMatrixWidget : ModuleWidget
                          GetMainInputId(i)));
 
              addChild(createLightCentered<MediumLight<RedLight>>(
-                          mm2px(GetInputLightMM(i)),
-                          module, GetInputLightId(i)));
+                          mm2px(JackToLight(GetInputJackMM(i))),
+                          module,
+                          GetInputLightId(i)));
 
-            addParam(createParamCentered<NKK>(
-                         mm2px(GetInputMuteSwitchMM(i)),
-                         module,
-                         GetInputMuteSwitchId(i)));
-            
-            for (size_t j = 0; j < x_numEquations; ++j)
+            for (size_t j = 0; j < x_numOperations; ++j)
             {
                 addParam(createParamCentered<NKK>(
                              mm2px(GetMatrixSwitchMM(i, j)),
                              module,
                              GetMatrixSwitchId(i, j)));
             }
+
+            for (size_t j = 0; j < x_numAccumulators; ++j)
+            {
+                addParam(createParamCentered<NKK>(
+                             mm2px(GetCoMuteSwitchMM(i, j)),
+                             module,
+                             GetPitchCoMuteSwitchId(i, j)));                
+            }
         }
 
-        for (size_t i = 0; i < x_numEquations; ++i)
+        for (size_t i = 0; i < x_numOperations; ++i)
         {
             addParam(createParamCentered<RoundBlackSnapKnob>(
-                         mm2px(GetEquationOperatorKnobMM(i)),
+                         mm2px(GetOperatorKnobMM(i)),
                          module,
-                         GetEquationOperatorKnobId(i)));
+                         GetOperatorKnobId(i)));
             addParam(createParamCentered<NKK>(
-                         mm2px(GetEquationOperatorSwitchMM(i)),
+                         mm2px(GetOperationSwitchMM(i)),
                          module,
-                         GetEquationSwitchId(i)));
+                         GetOperationSwitchId(i)));
+            addOutput(createOutputCentered<PJ301MPort>(
+                          mm2px(GetOperationOutputJackMM(i)),
+                          module,
+                          GetOperationOutputId(i)));            
             addChild(createLightCentered<MediumLight<RedLight>>(
-                         mm2px(GetEquationLightMM(i)),
-                         module, GetEquationLightId(i)));
+                         mm2px(JackToLight(GetOperationOutputJackMM(i))),
+                         module,
+                         GetOperationLightId(i)));
         }
 
-        for (size_t i = 0; i < x_numOutputs; ++i)
+        for (size_t i = 0; i < x_numAccumulators; ++i)
         {
-            addParam(createParamCentered<RoundBlackSnapKnob>(
-                         mm2px(GetOutputKnobMM(i)),
-                         module,
-                         GetOutputKnobId(i)));
             addOutput(createOutputCentered<PJ301MPort>(
                           mm2px(GetMainOutputJackMM(i)),
                           module,
@@ -158,12 +163,33 @@ struct LogicMatrixWidget : ModuleWidget
                           mm2px(GetTriggerOutputJackMM(i)),
                           module,
                           GetTriggerOutputId(i)));
-        }
+            addChild(createLightCentered<MediumLight<RedLight>>(
+                         mm2px(JackToLight(GetTriggerOutputJackMM(i))),
+                         module,
+                         GetTriggerLightId(i)));
+            addOutput(createOutputCentered<PJ301MPort>(
+                          mm2px(GetCVOutputJackMM(i)),
+                          module,
+                          GetCVOutputId(i)));
+            addChild(createLightCentered<MediumLight<RedLight>>(
+                         mm2px(JackToLight(GetCVOutputJackMM(i))),
+                         module,
+                         GetCVLightId(i)));
+            addInput(createInputCentered<PJ301MPort>(
+                         mm2px(GetIntervalInputJackMM(i)),
+                         module,
+                         GetIntervalCVInputId(i)));
+            
+            addParam(createParamCentered<RoundBlackSnapKnob>(
+                         mm2px(GetKnobMatrixMM(0, i)),
+                         module,
+                         GetAccumulatorIntervalKnobId(i)));
+            addParam(createParamCentered<RoundBlackKnob>(
+                         mm2px(GetKnobMatrixMM(1, i)),
+                         module,
+                         GetPitchPercentileKnobId(i)));
 
-        addParam(createParamCentered<RoundBlackSnapKnob>(
-                     mm2px(GetModeKnobMM()),
-                     module,
-                     GetModeKnobId()));
+        }
 	}
 };
 

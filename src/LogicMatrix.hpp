@@ -4,115 +4,24 @@
 
 struct LogicMatrix : Module
 {
-    enum class Mode : char
-    {
-        Direct = 0,
-        Independent = 1,
-        OneVoice = 2,
-        ThreeVoice = 3,
-        Chord = 4
-    };
-
-    enum class InputOverride : char
-    {
-        DontOverride,
-        OverrideHigh,
-        OverrideLow
-    };
-
-    static bool ApplyOverride(InputOverride ovr, bool value)
-    {
-        bool ret = false;
-        switch (ovr)
-        {
-            case InputOverride::DontOverride: return value;
-            case InputOverride::OverrideHigh: ret = true; break;
-            case InputOverride::OverrideLow: ret = false; break;
-        }
-
-        return ret;
-    }
-    
     struct Input
     {
-        enum class SwitchVal : char
-        {
-            MuteDown = 0, 
-            Unmuted = 1,
-            MuteUp = 2,
-        };
-        
         rack::engine::Input* m_port = nullptr;
         rack::dsp::TSchmittTrigger<float> m_schmittTrigger;
         rack::engine::Light* m_light = nullptr;
-        rack::engine::Param* m_switch = nullptr;
         bool m_value = false;
-        bool m_changedThisFrame = false;
+        uint8_t m_counter = 0;
 
         void Init(
             rack::engine::Input* port,
-            rack::engine::Light* light,
-            rack::engine::Param* swtch)
+            rack::engine::Light* light)
         {
             m_port = port;
             m_light = light;
-            m_switch = swtch;
-        }
-        
-        SwitchVal GetSwitchVal();
-        
-        bool IsMuted()
-        {
-            return GetSwitchVal() != SwitchVal::Unmuted;
-        }
-        
-        bool MutedValue()
-        {
-            return GetSwitchVal() == SwitchVal::MuteUp;
+            m_counter = 0;
         }
         
         void SetValue(Input* prev);
-
-        bool GetValue(InputOverride ovr)
-        {
-            return ApplyOverride(ovr, m_value);
-        }
-    };
-
-    struct InputOverrides
-    {
-        InputOverrides()
-            : m_ovr0(InputOverride::DontOverride)
-            , m_ovr1(InputOverride::DontOverride)
-        {
-        }
-
-        InputOverrides(
-            InputOverride ovr0,
-            InputOverride ovr1)
-            : m_ovr0(ovr0)
-            , m_ovr1(ovr1)
-        {
-        }
-
-        InputOverride Get(size_t i)
-        {
-            switch (i)
-            {
-                case 0: return m_ovr0;
-                case 1: return m_ovr1;
-                default: return InputOverride::DontOverride;
-            }
-        }
-
-        bool HasOverride()
-        {
-            return m_ovr0 == InputOverride::DontOverride &&
-                m_ovr1 == InputOverride::DontOverride;
-        }
-        
-        InputOverride m_ovr0;
-        InputOverride m_ovr1;
     };
 
     struct MatrixElement
@@ -124,8 +33,6 @@ struct LogicMatrix : Module
             Normal = 2
         };
         
-        rack::engine::Param* m_switch = nullptr;
-
         void Init(rack::engine::Param* swtch)
         {
             m_switch = swtch;
@@ -133,15 +40,44 @@ struct LogicMatrix : Module
         
         SwitchVal GetSwitchVal();
         
-        bool IsMuted()
-        {
-            return GetSwitchVal() == SwitchVal::Muted;
-        }
-        
-        bool GetValue(Input* input, InputOverride ovr);
+        rack::engine::Param* m_switch = nullptr;
     };
 
-    struct LogicEquation
+    struct InputVector
+    {
+        InputVector()
+            : m_bits(0)
+        {
+        }
+
+        InputVector(uint8_t bits)
+            : m_bits(bits)
+        {
+        }
+        
+        bool Get(size_t i)
+        {
+            return (m_bits & (1 << i)) >> i;
+        }
+
+        void Set(size_t i, bool value)
+        {
+            if (value)
+            {
+                m_bits |= 1 << i;
+            }
+            else
+            {
+                m_bits &= ~(1 << i);
+            }
+        }
+
+        size_t CountSetBits();
+
+        uint8_t m_bits;
+    };
+    
+    struct LogicOperation
     {
         enum class Operator : char
         {
@@ -162,35 +98,35 @@ struct LogicMatrix : Module
         Operator GetOperator();
         SwitchVal GetSwitchVal();
         
-        rack::engine::Param* m_switch = nullptr;
-        rack::engine::Param* m_operatorKnob = nullptr;
-        rack::engine::Light* m_light = nullptr;
-
+        void SetBitVectors()
+        {
+            using namespace LogicMatrixConstants;
+            for (size_t i = 0; i < x_numInputs; ++i)
+            {
+                MatrixElement::SwitchVal switchVal = m_elements[i].GetSwitchVal();
+                m_active.Set(i, switchVal != MatrixElement::SwitchVal::Muted);
+                m_inverted.Set(i, switchVal == MatrixElement::SwitchVal::Inverted);
+            }
+        }
+        
         void Init(
             rack::engine::Param* swtch,
             rack::engine::Param* operatorKnob,
+            rack::engine::Output* output,
             rack::engine::Light* light)
         {
             m_switch = swtch;
             m_operatorKnob = operatorKnob;
+            m_output = output;
             m_light = light;
         }            
 
-        bool GetValue(Input* inputArray, InputOverrides ovrs);
-        bool GetValueDirect(Input* inputArray, uint8_t* high, uint8_t* total)
-        {
-            bool value = GetValue(inputArray, InputOverrides());
-            LogicEquation::SwitchVal swtch = GetSwitchVal();
-            if (swtch != LogicEquation::SwitchVal::Middle)
-            {
-                ++(*total);
-                if (value == (swtch == LogicEquation::SwitchVal::Up))
-                {
-                    ++(*high);
-                }
-            }
+        bool GetValue(InputVector inputVector);
 
-            return value;
+        void SetOutput(bool value)
+        {
+            m_output->setVoltage(value ? 5.f : 0.f);
+            m_light->setBrightness(value ? 1.f : 0.f);
         }
 
         // Up is output zero but input id 2, so invert.
@@ -198,70 +134,37 @@ struct LogicMatrix : Module
         size_t GetOutputTarget()
         {
             using namespace LogicMatrixConstants;
-            return x_numOutputs - static_cast<size_t>(GetSwitchVal()) - 1;
+            return x_numAccumulators - static_cast<size_t>(GetSwitchVal()) - 1;
         }
-        
+
+        rack::engine::Param* m_switch = nullptr;
+        rack::engine::Param* m_operatorKnob = nullptr;
+        rack::engine::Light* m_light = nullptr;
+        rack::engine::Output* m_output = nullptr;
+        InputVector m_active;
+        InputVector m_inverted;
+
         LogicMatrix::MatrixElement m_elements[LogicMatrixConstants::x_numInputs];
     };
 
-    struct MatrixEvalResult
-    {
-        MatrixEvalResult()
-        {
-            using namespace LogicMatrixConstants;
-            for (size_t i = 0; i < x_numOutputs; ++i)
-            {
-                m_high[i] = 0;
-                m_total[i] = 0;
-            }
-        }
-        
-        uint8_t m_high[LogicMatrixConstants::x_numOutputs];
-        uint8_t m_total[LogicMatrixConstants::x_numOutputs];
-    };
-
-    MatrixEvalResult EvalMatrix(InputOverrides ovrs);
-
-    float ComputePitch(MatrixEvalResult evalResult)
-    {
-        using namespace LogicMatrixConstants;
-        float result = 0;
-        for (size_t i = 0; i < x_numOutputs; ++i)
-        {
-            if (m_outputs[i].IsPitch())
-            {
-                result += m_outputs[i].GetValue(evalResult.m_high[i], evalResult.m_total[i]);
-            }
-        }
-
-        return result;
-    }
-
-    float EvalMatrixAndComputePitch(InputOverrides ovrs)
-    {
-        return ComputePitch(EvalMatrix(ovrs));
-    }
-    
-    struct Output
+    struct Accumulator
     {
         enum class Interval
         {
-            Or = 0,
-            And = 1,
-            Avg = 2,
-            WholeStep = 3,
-            MinorThird = 4,
-            MajorThird = 5,
-            PerfectFourth = 6,
-            PerfectFifth = 7,
-            MinorSeventh = 8,
-            Octave = 9
+            Off = 0,
+            HalfStep = 1,
+            WholeStep = 2,
+            MinorThird = 3,
+            MajorThird = 4,
+            PerfectFourth = 5,
+            PerfectFifth = 6,
+            MinorSeventh = 7,
+            Octave = 8
         };
 
         static constexpr float x_voltages[] = {
-            0 /*And*/,
-            0 /*Or*/,
-            0 /*Avg*/,
+            0 /*Off*/,
+            0.09310940439 /*half step = log_2(16/15)*/,
             0.16992500144231237/*whole tone = log_2(9/8)*/,
             0.2630344058337938 /*minor third = log_2(6/5)*/,
             0.32192809488736235 /*major third = log_2(5/4)*/,
@@ -272,67 +175,165 @@ struct LogicMatrix : Module
         };
 
         rack::engine::Param* m_intervalKnob = nullptr;
-        rack::engine::Output* m_mainOut = nullptr;
-        rack::engine::Output* m_triggerOut = nullptr;
-        rack::dsp::PulseGenerator m_pulseGen;
-        float m_value = 0.0;
+        rack::engine::Output* m_cvOutput = nullptr;
+        rack::engine::Light* m_cvOutLight = nullptr;
 
         Interval GetInterval();
-
-        bool IsPitch()
-        {
-            Interval interval = GetInterval();
-            switch(interval)
-            {
-                case Interval::And:
-                case Interval::Or:
-                case Interval::Avg:
-                    return false;
-                default:
-                    return true;
-            }
-        }
         
-        float GetValue(uint8_t high, uint8_t total);
+        float GetPitch();
 
-        void SetValue(float value, float dt)
-        {
-            bool changedThisFrame = (value != m_value);
-            m_value = value;
-            m_mainOut->setVoltage(value);
-
-            if (changedThisFrame)
-            {
-                m_pulseGen.trigger();
-            }
-
-            m_triggerOut->setVoltage(m_pulseGen.process(dt) ? 5.f : 0.f);
-        }
-
-        void SetValueDirect(bool trigVal, float value)
-        {
-            // There is no trigger in direct mode, so set m_changedThisFrame to false
-            //
-            m_value = value;
-            m_triggerOut->setVoltage(trigVal ? 5.f : 0.f);
-            m_mainOut->setVoltage(value);
-        }
-        
         void Init(
             rack::engine::Param* intervalKnob,
-            rack::engine::Output* mainOut,
-            rack::engine::Output* triggerOut)
+            rack::engine::Output* cvOutput,
+            rack::engine::Light* cvOutLight)
         {
             m_intervalKnob = intervalKnob;
-            m_mainOut = mainOut;
-            m_triggerOut = triggerOut;
+            m_cvOutput = cvOutput;
+            m_cvOutLight = cvOutLight;
         }
     };
 
-    Mode GetMode();
+    struct MatrixEvalResult
+    {
+        MatrixEvalResult()
+        {
+            using namespace LogicMatrixConstants;
+            
+            for (size_t i = 0; i < x_numAccumulators; ++i)
+            {
+                m_high[i] = 0;
+                m_total[i] = 0;
+            }
+        }
 
-    void ProcessInputs();
-    void ProcessOutputs(float dt);
+        void SetPitch(Accumulator* accumulators)
+        {
+            using namespace LogicMatrixConstants;
+            
+            float result = 0;
+            for (size_t i = 0; i < x_numAccumulators; ++i)
+            {
+                result += accumulators[i].GetPitch() * m_high[i];
+            }
+
+            m_pitch = result;
+        }
+
+        bool operator<(const MatrixEvalResult& other) const
+        {
+            return m_pitch < other.m_pitch;
+        }
+        
+        uint8_t m_high[LogicMatrixConstants::x_numAccumulators];
+        uint8_t m_total[LogicMatrixConstants::x_numAccumulators];
+        float m_pitch;
+    };
+
+    MatrixEvalResult EvalMatrix(InputVector inputVector);
+
+    struct InputVectorIterator
+    {
+        uint8_t m_ordinal = 0;
+        InputVector m_coMuteVector;
+        size_t m_coMuteSize = 0;
+        InputVector m_defaultVector;
+        size_t m_forwardingIndices[LogicMatrixConstants::x_numInputs];
+
+        InputVectorIterator(InputVector coMuteVector, InputVector defaultVector);
+
+        InputVector Get();
+        void Next();
+        bool Done();
+    };
+    
+    struct CoMuteSwitch
+    {        
+        void Init(rack::engine::Param* swtch)
+        {
+            m_switch = swtch;
+        }
+        
+        bool IsCoMuted()
+        {
+            return m_switch->getValue() < 0.5;
+        }
+        
+        rack::engine::Param* m_switch = nullptr;
+    };
+
+    struct CoMuteState
+    {
+        InputVector GetCoMuteVector()
+        {
+            using namespace LogicMatrixConstants;
+            
+            InputVector result;
+            for (size_t i = 0; i < x_numInputs; ++i)
+            {
+                result.Set(i, m_switches[i].IsCoMuted());
+            }
+
+            return result;
+        }
+
+        void Init(rack::engine::Param* percentileKnob)
+        {
+            m_percentileKnob = percentileKnob;
+        }
+        
+        CoMuteSwitch m_switches[LogicMatrixConstants::x_numInputs];
+        rack::engine::Param* m_percentileKnob = nullptr;
+    };
+
+    struct Output
+    {
+        rack::engine::Output* m_mainOut = nullptr;
+        rack::engine::Output* m_triggerOut = nullptr;
+        rack::engine::Light* m_triggerLight = nullptr;
+        rack::dsp::PulseGenerator m_pulseGen;
+        float m_pitch = 0.0;
+        CoMuteState m_coMuteState;
+
+        MatrixEvalResult ComputePitch(LogicMatrix* matrix, InputVector defaultVector);
+       
+        void SetPitch(float pitch, float dt)
+        {
+            bool changedThisFrame = (pitch != m_pitch);
+            m_pitch = pitch;
+            m_mainOut->setVoltage(pitch);
+
+            if (changedThisFrame)
+            {
+                m_pulseGen.trigger(0.01);
+            }
+
+            bool trig = m_pulseGen.process(dt);
+            m_triggerOut->setVoltage(trig ? 5.f : 0.f);
+            m_triggerLight->setBrightness(trig ? 1.f : 0.f);
+        }
+
+        InputVectorIterator GetInputVectorIterator(InputVector defaultVector)
+        {
+            return InputVectorIterator(m_coMuteState.GetCoMuteVector(), defaultVector);
+        }
+        
+        void Init(
+            rack::engine::Output* mainOut,
+            rack::engine::Output* triggerOut,
+            rack::engine::Light* triggerLight,
+            rack::engine::Param* percentileKnob)
+        {
+            m_mainOut = mainOut;
+            m_triggerOut = triggerOut;
+            m_triggerLight = triggerLight;
+            m_coMuteState.Init(percentileKnob);
+        }
+    };
+
+    InputVector ProcessInputs();
+    void ProcessOperations(InputVector defaultVector);
+    void ProcessCVOuts(InputVector defaultVector);
+    void ProcessOutputs(InputVector defaultVector, float dt);
     
 	LogicMatrix();
 
@@ -343,6 +344,7 @@ struct LogicMatrix : Module
     void process(const ProcessArgs& args) override;
 
     Input m_inputs[LogicMatrixConstants::x_numInputs];
-    LogicEquation m_equations[LogicMatrixConstants::x_numEquations];
-    Output m_outputs[LogicMatrixConstants::x_numOutputs];
+    LogicOperation m_operations[LogicMatrixConstants::x_numOperations];
+    Accumulator m_accumulators[LogicMatrixConstants::x_numAccumulators];
+    Output m_outputs[LogicMatrixConstants::x_numAccumulators];
 };

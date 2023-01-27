@@ -6,45 +6,33 @@ Enum FloatToEnum(float in)
     return static_cast<Enum>(static_cast<int>(in + 0.5));
 }
 
-LogicMatrix::Input::SwitchVal
-LogicMatrix::Input::GetSwitchVal()
-{
-    return FloatToEnum<SwitchVal>(m_switch->getValue());
-}
-
 void LogicMatrix::Input::SetValue(LogicMatrix::Input* prev)
 {
     using namespace LogicMatrixConstants;
     bool oldValue = m_value;
-    
-    if (IsMuted())
-    {
-        m_value = MutedValue();
-    }
-    
+        
     // If a cable is connected, use that value.
     //
-    else if (m_port->isConnected())
+    if (m_port->isConnected())
     {
         float cableValue = m_port->getVoltage();
         m_schmittTrigger.process(cableValue);
         m_value = m_schmittTrigger.isHigh();
+        if (m_value && !oldValue)
+        {
+            ++m_counter;
+        }
     }
     
     // Each input (except the first) is normaled to divide-by-two of the previous input.
     //
     else if (prev)
     {
-        // If the previous input went low-to-high, flip this input.
-        //
-        if (prev->m_value && prev->m_changedThisFrame)
-        {
-            m_value = !m_value;
-        }
+        m_value = prev->m_counter % 2;
+        m_counter = prev->m_counter / 2;        
     }
-    
-    m_changedThisFrame = m_value != oldValue;
-    if (m_changedThisFrame)
+
+    if (oldValue != m_value)
     {
         m_light->setBrightness(m_value ? 1.f : 0.f);
     }
@@ -56,47 +44,41 @@ LogicMatrix::MatrixElement::GetSwitchVal()
     return FloatToEnum<SwitchVal>(m_switch->getValue());
 }
 
-bool LogicMatrix::MatrixElement::GetValue(Input* input, InputOverride ovr)
+size_t LogicMatrix::InputVector::CountSetBits()
 {
-    bool normalValue = input->GetValue(ovr);
-    switch (GetSwitchVal())
+    static const uint8_t x_bitsSet [16] =
     {
-        case SwitchVal::Normal: return normalValue;
-        case SwitchVal::Inverted: return !normalValue;
-        default: return false;
-    }
+        0, 1, 1, 2, 1, 2, 2, 3, 
+        1, 2, 2, 3, 2, 3, 3, 4
+    };
+
+    return x_bitsSet[m_bits & 0x0F] + x_bitsSet[m_bits >> 4];
 }
 
-LogicMatrix::LogicEquation::Operator
-LogicMatrix::LogicEquation::GetOperator()
+LogicMatrix::LogicOperation::Operator
+LogicMatrix::LogicOperation::GetOperator()
 {
     return FloatToEnum<Operator>(m_operatorKnob->getValue());
 }
 
-LogicMatrix::LogicEquation::SwitchVal
-LogicMatrix::LogicEquation::GetSwitchVal()
+LogicMatrix::LogicOperation::SwitchVal
+LogicMatrix::LogicOperation::GetSwitchVal()
 {
     return FloatToEnum<SwitchVal>(m_switch->getValue());
 }
 
-bool LogicMatrix::LogicEquation::GetValue(LogicMatrix::Input* inputArray, InputOverrides ovrs)
+bool LogicMatrix::LogicOperation::GetValue(InputVector inputVector)
 {
     using namespace LogicMatrixConstants;   
 
-    size_t countHigh = 0;
-    size_t countTotal = 0;
-    for (size_t i = 0; i < x_numInputs; ++i)
-    {       
-        if (!m_elements[i].IsMuted())
-        {
-            ++countTotal;
-            bool isHigh = m_elements[i].GetValue(&inputArray[i], ovrs.Get(i));
-            if (isHigh)
-            {
-                ++countHigh;
-            }
-        }
-    }
+    // And with m_active to mute the muted inputs.
+    // Xor with m_inverted to invert the inverted ones.
+    //
+    inputVector.m_bits &= m_active.m_bits;
+    inputVector.m_bits ^= m_inverted.m_bits;
+    
+    size_t countTotal = m_active.CountSetBits();
+    size_t countHigh = inputVector.CountSetBits();
 
     bool ret = false;
     switch (GetOperator())
@@ -108,58 +90,131 @@ bool LogicMatrix::LogicEquation::GetValue(LogicMatrix::Input* inputArray, InputO
         case Operator::Majority: ret = (2 * countHigh > countTotal); break;
     }
 
-    if (!ovrs.HasOverride())
-    {
-        m_light->setBrightness(ret ? 1.f : 0.f);
-    }
-    
     return ret;
 }
 
-LogicMatrix::MatrixEvalResult LogicMatrix::EvalMatrix(InputOverrides ovrs)
+LogicMatrix::MatrixEvalResult LogicMatrix::EvalMatrix(InputVector inputVector)
 {
     using namespace LogicMatrixConstants;
     MatrixEvalResult result;
 
-    for (size_t i = 0; i < x_numEquations; ++i)
+    for (size_t i = 0; i < x_numOperations; ++i)
     {
-        size_t outputId = m_equations[i].GetOutputTarget();
+        size_t outputId = m_operations[i].GetOutputTarget();
         ++result.m_total[outputId];
-        bool isHigh = m_equations[i].GetValue(m_inputs, ovrs);
+        bool isHigh = m_operations[i].GetValue(inputVector);
         if (isHigh)
         {
             ++result.m_high[outputId];
         }
     }
 
+    result.SetPitch(m_accumulators);
+
     return result;
 }
 
-constexpr float LogicMatrix::Output::x_voltages[];
+LogicMatrix::InputVectorIterator::InputVectorIterator(InputVector coMuteVector, InputVector defaultVector)
+    : m_coMuteVector(coMuteVector)
+    , m_coMuteSize(m_coMuteVector.CountSetBits())
+    , m_defaultVector(defaultVector)
+{
+    size_t j = 0;
+    for (size_t i = 0; i < m_coMuteSize; ++i)
+    {
+        while (!m_coMuteVector.Get(j))
+        {
+            ++j;
+        }
 
-LogicMatrix::Output::Interval
-LogicMatrix::Output::GetInterval()
+        m_forwardingIndices[i] = j;
+        ++j;
+    }
+}
+
+LogicMatrix::InputVector
+LogicMatrix::InputVectorIterator::Get()
+{
+    InputVector result = m_defaultVector;
+
+    // Shift the bits of m_ordinal into the set positions of the co muted vector.
+    // This is run many times, so unrolling the loop actually helps.
+    //
+    // In GCC, the comment causes warnings to be supressed...
+    //
+    switch (m_coMuteSize)
+    {
+        case 6:
+            result.Set(m_forwardingIndices[5], (m_ordinal & (1 << 5)) >> 5);
+            // fallthrough
+        case 5:
+            result.Set(m_forwardingIndices[4], (m_ordinal & (1 << 4)) >> 4);
+            // fallthrough
+        case 4:
+            result.Set(m_forwardingIndices[3], (m_ordinal & (1 << 3)) >> 3);
+            // fallthrough
+        case 3:
+            result.Set(m_forwardingIndices[2], (m_ordinal & (1 << 2)) >> 2);
+            // fallthrough
+        case 2:
+            result.Set(m_forwardingIndices[1], (m_ordinal & (1 << 1)) >> 1);
+            // fallthrough
+        case 1:
+            result.Set(m_forwardingIndices[0], (m_ordinal & (1 << 0)) >> 0);
+            // fallthrough
+        case 0:
+        default:
+            break;
+    }
+
+    return result;
+}
+
+void LogicMatrix::InputVectorIterator::Next()
+{
+    ++m_ordinal;
+}
+
+bool LogicMatrix::InputVectorIterator::Done()
+{
+    return (1 << m_coMuteSize) <= m_ordinal;
+}
+
+constexpr float LogicMatrix::Accumulator::x_voltages[];
+
+LogicMatrix::Accumulator::Interval
+LogicMatrix::Accumulator::GetInterval()
 {
     return FloatToEnum<Interval>(m_intervalKnob->getValue());
 }
 
-float LogicMatrix::Output::GetValue(uint8_t high, uint8_t total)
+float
+LogicMatrix::Accumulator::GetPitch()
 {
-    Interval interval = GetInterval();
-    switch (interval)
-    {
-        case Interval::Or: return high > 0 ? 5.f : 0.f;
-        case Interval::And: return high == total ? 5.f : 0.f;
-        case Interval::Avg: return static_cast<float>(high) * 5.0 / static_cast<float>(total);
-        default: return x_voltages[static_cast<size_t>(interval)] * high;
-    }
+    return x_voltages[static_cast<size_t>(GetInterval())];
 }
 
-LogicMatrix::Mode
-LogicMatrix::GetMode()
+LogicMatrix::MatrixEvalResult
+LogicMatrix::Output::ComputePitch(LogicMatrix* matrix, LogicMatrix::InputVector defaultVector)
 {
-    using namespace LogicMatrixConstants;      
-    return FloatToEnum<Mode>(params[GetModeKnobId()].getValue());
+    using namespace LogicMatrixConstants;   
+    
+    MatrixEvalResult preResult[1 << x_numInputs];
+    InputVectorIterator itr = GetInputVectorIterator(defaultVector);
+    for (; !itr.Done(); itr.Next())
+    {
+        preResult[itr.m_ordinal] = matrix->EvalMatrix(itr.Get());
+    }
+
+    size_t numResults = itr.m_ordinal;
+    std::sort(preResult, preResult + numResults);
+
+    float percentile = m_coMuteState.m_percentileKnob->getValue();
+    ssize_t ix = static_cast<size_t>(percentile * numResults);
+    ix = std::min<ssize_t>(ix, numResults - 1);
+    ix = std::max<ssize_t>(ix, 0);
+
+    return preResult[ix];
 }
 
 LogicMatrix::LogicMatrix()
@@ -169,174 +224,123 @@ LogicMatrix::LogicMatrix()
     config(GetNumParams(), GetNumInputs(), GetNumOutputs(), GetNumLights());
     for (size_t i = 0; i < x_numInputs; ++i)
     {
-        configParam(GetInputMuteSwitchId(i), 0.f, 2.f, 1.f, "");
-        configInput(GetMainInputId(i), "");
+        configInput(GetMainInputId(i), "Main Out " + std::to_string(i));
         
-        for (size_t j = 0; j < x_numEquations; ++j)
+        for (size_t j = 0; j < x_numOperations; ++j)
         {
             configParam(GetMatrixSwitchId(i, j), 0.f, 2.f, 1.f, "");
-            m_equations[j].m_elements[i].Init(&params[GetMatrixSwitchId(i, j)]);
+            m_operations[j].m_elements[i].Init(&params[GetMatrixSwitchId(i, j)]);
+        }
+
+        for (size_t j = 0; j < x_numAccumulators; ++j)
+        {
+            configParam(GetPitchCoMuteSwitchId(i, j), 0.f, 1.f, 1.f, "Co-Mute Switch " + std::to_string(i) + "," + std::to_string(j));
+            m_outputs[j].m_coMuteState.m_switches[i].Init(
+                &params[GetPitchCoMuteSwitchId(i, j)]);
         }
 
         m_inputs[i].Init(
             &inputs[GetMainInputId(i)],
-            &lights[GetInputLightId(i)],
-            &params[GetInputMuteSwitchId(i)]);
+            &lights[GetInputLightId(i)]);
     }
     
-    for (size_t i = 0; i < x_numEquations; ++i)
+    for (size_t i = 0; i < x_numOperations; ++i)
     {
-        configParam(GetEquationSwitchId(i), 0.f, 2.f, 1.f, "");
-        configParam(GetEquationOperatorKnobId(i), 0.f, 4.f, 0.f, "");
+        configParam(GetOperationSwitchId(i), 0.f, 2.f, 1.f, "");
+        configParam(GetOperatorKnobId(i), 0.f, 4.f, 0.f, "");
+        configOutput(GetOperationOutputId(i), "Logic Out " + std::to_string(i));
 
-        m_equations[i].Init(
-            &params[GetEquationSwitchId(i)],
-            &params[GetEquationOperatorKnobId(i)],
-            &lights[GetEquationLightId(i)]);
+        m_operations[i].Init(
+            &params[GetOperationSwitchId(i)],
+            &params[GetOperatorKnobId(i)],
+            &outputs[GetOperationOutputId(i)],
+            &lights[GetOperationLightId(i)]);
     }
     
-    for (size_t i = 0; i < x_numOutputs; ++i)
+    for (size_t i = 0; i < x_numAccumulators; ++i)
     {
-        configParam(GetOutputKnobId(i), 0.f, 9.f, 0.f, "");
+        configParam(GetAccumulatorIntervalKnobId(i), 0.f, 8.f, 0.f, "Accum Interval Knob " + std::to_string(i));
+        configParam(GetPitchPercentileKnobId(i), 0.f, 1.f, 0.f, "Voice Percentile Knob " + std::to_string(i));
+
+        configInput(GetIntervalCVInputId(i), "Interval CV In " + std::to_string(i));
+
         configOutput(GetMainOutputId(i), "");
         configOutput(GetTriggerOutputId(i), "");
+        configOutput(GetCVOutputId(i), "");
+
+        m_accumulators[i].Init(
+            &params[GetAccumulatorIntervalKnobId(i)],
+            &outputs[GetCVOutputId(i)],
+            &lights[GetCVLightId(i)]);
 
         m_outputs[i].Init(
-            &params[GetOutputKnobId(i)],
             &outputs[GetMainOutputId(i)],
-            &outputs[GetTriggerOutputId(i)]);
+            &outputs[GetTriggerOutputId(i)],
+            &lights[GetTriggerLightId(i)],
+            &params[GetPitchPercentileKnobId(i)]);
     }
-    
-    configParam(GetModeKnobId(), 0.f, 4.f, 0.f, "");
 }
 
-void LogicMatrix::ProcessInputs()
+LogicMatrix::InputVector
+LogicMatrix::ProcessInputs()
 {
     using namespace LogicMatrixConstants;
+
+    InputVector result;
     for (size_t i = 0; i < x_numInputs; ++i)
     {
         m_inputs[i].SetValue(i > 0 ? &m_inputs[i - 1] : nullptr);
+        result.Set(i, m_inputs[i].m_value);
+    }
+
+    return result;
+}
+
+void LogicMatrix::ProcessOperations(InputVector defaultVector)
+{
+    using namespace LogicMatrixConstants;
+    
+    for (size_t i = 0; i < x_numOperations; ++i)
+    {
+        m_operations[i].SetBitVectors();
+        bool value = m_operations[i].GetValue(defaultVector);
+        m_operations[i].SetOutput(value);
     }
 }
 
-void LogicMatrix::ProcessOutputs(float dt)
+void LogicMatrix::ProcessOutputs(InputVector defaultVector, float dt)
 {
     using namespace LogicMatrixConstants;
 
-    MatrixEvalResult evalResult = EvalMatrix(InputOverrides());
-
-    Mode mode = GetMode();
-    switch(mode)
+    for (size_t i = 0; i < x_numAccumulators; ++i)
     {
-        case Mode::Direct:
+        MatrixEvalResult res = m_outputs[i].ComputePitch(this, defaultVector);
+        m_outputs[i].SetPitch(res.m_pitch, dt);
+    }
+}
+
+void LogicMatrix::ProcessCVOuts(InputVector defaultVector)
+{
+    using namespace LogicMatrixConstants;
+
+    MatrixEvalResult result = EvalMatrix(defaultVector);
+    for (size_t i = 0; i < x_numAccumulators; ++i)
+    {
+        float value = 0.f;
+        if (result.m_total[i] != 0)
         {
-            for (size_t i = 0; i < x_numOutputs; ++i)
-            {
-                uint8_t high = 0;
-                uint8_t total = 0;
-
-                // First evaluate the equation directly going to the trigger output.
-                //
-                bool trigVal = m_equations[2 * i].GetValueDirect(m_inputs, &high, &total);
-                m_equations[2 * i + 1].GetValueDirect(m_inputs, &high, &total);
-                m_outputs[i].SetValueDirect(trigVal, m_outputs[i].GetValue(high, total));
-            }
-
-            break;
+            value = static_cast<float>(result.m_high[i]) / result.m_total[i];
         }
 
-        case Mode::Independent:
-        {
-            for (size_t i = 0; i < x_numOutputs; ++i)
-            {
-                m_outputs[i].SetValue(m_outputs[i].GetValue(evalResult.m_high[i], evalResult.m_total[i]), dt);
-            }
-
-            break;
-        }
-
-        case Mode::OneVoice:
-        {
-            // In one voice mode, the middle output will be set to the sum.  Set the other two to the average, for cool
-            // stepped voltages.
-                //
-            m_outputs[0].SetValue(5.0 * static_cast<float>(evalResult.m_high[0]) / evalResult.m_total[0], dt);
-            m_outputs[1].SetValue(ComputePitch(evalResult), dt);
-            m_outputs[2].SetValue(5.0 * static_cast<float>(evalResult.m_high[2]) / evalResult.m_total[2], dt);
-            break;
-        }
-
-        case Mode::ThreeVoice:
-        {
-            float leadPitch = EvalMatrixAndComputePitch(InputOverrides());
-            float bassPitch = 10.f;
-
-            // Set the bass equal to the lowest implicit chord tone.
-            //
-            for (InputOverride ovr0 : {InputOverride::OverrideLow, InputOverride::OverrideHigh})
-            {
-                for (InputOverride ovr1 : {InputOverride::OverrideLow, InputOverride::OverrideHigh})
-                {
-                    bassPitch = std::min<float>(bassPitch, EvalMatrixAndComputePitch(InputOverrides(ovr0, ovr1)));
-                }
-            }
-
-            // For the third voice, set it to the lower of the two, so long as that isn't the bass value (unless they both are).
-            // The bass value will of course be no larger than either of these.
-            //
-            float zeroOvrLow = EvalMatrixAndComputePitch(InputOverrides(InputOverride::OverrideLow, InputOverride::DontOverride));
-            float zeroOvrHigh = EvalMatrixAndComputePitch(InputOverrides(InputOverride::OverrideHigh, InputOverride::DontOverride));
-            float tenorPitch = zeroOvrLow == bassPitch ? zeroOvrHigh : std::min<float>(zeroOvrHigh, zeroOvrLow);
-
-            m_outputs[0].SetValue(bassPitch, dt);
-            m_outputs[1].SetValue(leadPitch, dt);
-            m_outputs[2].SetValue(tenorPitch, dt);
-            break;
-        }
-
-        case Mode::Chord:
-        {
-            float pitches[4];
-            size_t ix = 0;
-            for (InputOverride ovr0 : {InputOverride::OverrideLow, InputOverride::OverrideHigh})
-            {
-                for (InputOverride ovr1 : {InputOverride::OverrideLow, InputOverride::OverrideHigh})
-                {
-                    pitches[ix] = EvalMatrixAndComputePitch(InputOverrides(ovr0, ovr1));
-                    ++ix;
-                }
-            }
-
-            static const size_t x_numPitches = 4;
-            std::sort(pitches, pitches + x_numPitches);
-            bool usedPitches[] = {false, false, false, false};
-            m_outputs[0].SetValue(pitches[0], dt);
-            usedPitches[0] = true;
-            for (size_t i = 1; i < x_numOutputs; ++i)
-            {
-                size_t ixToUse = x_numPitches;
-                for (size_t j = 0; j < x_numPitches; ++j)
-                {
-                    if (!usedPitches[j] &&
-                        (ixToUse == x_numPitches ||
-                         std::abs(m_outputs[i].m_value - pitches[j]) <
-                         std::abs(m_outputs[i].m_value - pitches[ixToUse])))
-                    {
-                        ixToUse = j;                        
-                    }
-                }
-
-                usedPitches[ixToUse] = true;
-                m_outputs[i].SetValue(pitches[ixToUse], dt);
-            }
-
-            break;
-        }
-    }    
+        m_accumulators[i].m_cvOutput->setVoltage(5.f * value);
+        m_accumulators[i].m_cvOutLight->setBrightness(value);
+    }
 }
 
 void LogicMatrix::process(const ProcessArgs& args)
 {
-    ProcessInputs();
-    ProcessOutputs(args.sampleTime);
+    InputVector defaultVector = ProcessInputs();
+    ProcessOperations(defaultVector);
+    ProcessCVOuts(defaultVector);
+    ProcessOutputs(defaultVector, args.sampleTime);
 }

@@ -4,27 +4,27 @@ namespace LogicMatrixConstants
 {
     enum class ParamType : int
     {
-        InputMuteSwitch = 0,
-        MatrixSwitch = 1,
-        EquationSwitch = 2,
-        EquationOperatorKnob = 3,
-        OutputKnob = 4,
-        ModeKnob = 5,
+        MatrixSwitch = 0,
+        OperationSwitch = 1,
+        OperatorKnob = 2,
+        AccumulatorIntervalKnob = 3,
+        PitchCoMuteSwitch = 4,
+        PitchPercentileKnob = 5,
         NumParamTypes = 6
     };
 
-    static constexpr size_t x_numInputs = 5;
-    static constexpr size_t x_numEquations = 6;
-    static constexpr size_t x_numOutputs = 3;
+    static constexpr size_t x_numInputs = 6;
+    static constexpr size_t x_numOperations = 6;
+    static constexpr size_t x_numAccumulators = 3;
 
     static constexpr size_t x_numParamsPerType[] =
     {
-        x_numInputs /*InputMuteSwitch*/,
-        x_numInputs * x_numEquations /*MatrixSwitch*/,
-        x_numEquations /*EquationSwitch*/,
-        x_numEquations /*EquationOperatorKnob*/,
-        x_numOutputs /*OutputKnob*/,
-        1 /*ModeKnob*/
+        x_numInputs * x_numOperations /*MatrixSwitch*/,
+        x_numOperations /*OperationSwitch*/,
+        x_numOperations /*OperatorKnob*/,
+        x_numAccumulators /*AccumulatorIntervalKnob*/,
+        x_numInputs * x_numAccumulators /*PitchCoMuteSwitch*/,
+        x_numAccumulators /*PitchPercentileKnob*/,
     };
 
     static constexpr size_t x_paramStartPerType[] = {
@@ -34,42 +34,42 @@ namespace LogicMatrixConstants
         x_numParamsPerType[0] + x_numParamsPerType[1] + x_numParamsPerType[2],
         x_numParamsPerType[0] + x_numParamsPerType[1] + x_numParamsPerType[2] + x_numParamsPerType[3],
         x_numParamsPerType[0] + x_numParamsPerType[1] + x_numParamsPerType[2] + x_numParamsPerType[3] + x_numParamsPerType[4],
-        x_numParamsPerType[0] + x_numParamsPerType[1] + x_numParamsPerType[2] + x_numParamsPerType[3] + x_numParamsPerType[4] + x_numParamsPerType[5]
-    };
+        x_numParamsPerType[0] + x_numParamsPerType[1] + x_numParamsPerType[2] + x_numParamsPerType[3] + x_numParamsPerType[4] + x_numParamsPerType[5],
+     }; 
 
     static constexpr size_t GetParamId(ParamType paramType, size_t paramId)
     {
         return x_paramStartPerType[static_cast<int>(paramType)] + paramId;
     }
 
-    static constexpr size_t GetInputMuteSwitchId(size_t inputId)
+    static constexpr size_t GetMatrixSwitchId(size_t inputId, size_t operationId)
     {
-        return GetParamId(ParamType::InputMuteSwitch, inputId);
-    }
-
-    static constexpr size_t GetMatrixSwitchId(size_t inputId, size_t equationId)
-    {
-        return GetParamId(ParamType::MatrixSwitch, inputId + equationId * x_numInputs);
+        return GetParamId(ParamType::MatrixSwitch, inputId + operationId * x_numInputs);
     }
     
-    static constexpr size_t GetEquationSwitchId(size_t equationId)
+    static constexpr size_t GetOperationSwitchId(size_t operationId)
     {
-        return GetParamId(ParamType::EquationSwitch, equationId);
+        return GetParamId(ParamType::OperationSwitch, operationId);
     }
 
-    static constexpr size_t GetEquationOperatorKnobId(size_t equationId)
+    static constexpr size_t GetOperatorKnobId(size_t operationId)
     {
-        return GetParamId(ParamType::EquationOperatorKnob, equationId);
+        return GetParamId(ParamType::OperatorKnob, operationId);
     }
 
-    static constexpr size_t GetOutputKnobId(size_t outputId)
+    static constexpr size_t GetAccumulatorIntervalKnobId(size_t accumulatorId)
     {
-        return GetParamId(ParamType::OutputKnob, outputId);
+        return GetParamId(ParamType::AccumulatorIntervalKnob, accumulatorId);
     }
 
-    static constexpr size_t GetModeKnobId()
+    static constexpr size_t GetPitchCoMuteSwitchId(size_t inputId, size_t accumulatorId)
     {
-        return GetParamId(ParamType::ModeKnob, 0);
+        return GetParamId(ParamType::PitchCoMuteSwitch, inputId + accumulatorId * x_numInputs);
+    }
+
+    static constexpr size_t GetPitchPercentileKnobId(size_t accumulatorId)
+    {
+        return GetParamId(ParamType::PitchPercentileKnob, accumulatorId);
     }
 
     static constexpr size_t GetNumParams()
@@ -79,19 +79,22 @@ namespace LogicMatrixConstants
 
     enum class InputType : int
     {
-        MainInput,
-        NumInputTypes,
+        MainInput = 0,
+        IntervalCVInput = 1,
+        NumInputTypes = 2,
     };
 
     static constexpr size_t x_numInputsPerType[] =
     {
-        x_numInputs
+        x_numInputs,
+        x_numAccumulators
     };
 
     static constexpr size_t x_inputStartPerType[] =
     {
         0,
-        x_numInputsPerType[0]
+        x_numInputsPerType[0],
+        x_numInputsPerType[0] + x_numInputsPerType[1]
     };
 
     static constexpr size_t GetInputId(InputType inputType, size_t inputId)
@@ -104,6 +107,11 @@ namespace LogicMatrixConstants
         return GetInputId(InputType::MainInput, inputId);
     }
 
+    static constexpr size_t GetIntervalCVInputId(size_t accumulatorId)
+    {
+        return GetInputId(InputType::IntervalCVInput, accumulatorId);
+    }
+
     static constexpr size_t GetNumInputs()
     {
         return x_inputStartPerType[static_cast<int>(InputType::NumInputTypes)];
@@ -111,27 +119,38 @@ namespace LogicMatrixConstants
 
     enum class OutputType : int
     {
-        MainOutput,
-        TriggerOutput,
-        NumOutputTypes
+        OperationOutput = 0,
+        MainOutput = 1,
+        TriggerOutput = 2,
+        CVOutput = 3,
+        NumOutputTypes = 4
     };
 
     static constexpr size_t x_numOutputsPerType[] =
     {
-        x_numOutputs,
-        x_numOutputs
+        x_numOperations,
+        x_numAccumulators,
+        x_numAccumulators,
+        x_numAccumulators
     };
 
     static constexpr size_t x_outputStartPerType[] =
     {
         0,
         x_numOutputsPerType[0],
-        x_numOutputsPerType[0] + x_numOutputsPerType[1]
+        x_numOutputsPerType[0] + x_numOutputsPerType[1],
+        x_numOutputsPerType[0] + x_numOutputsPerType[1] + x_numOutputsPerType[2],
+        x_numOutputsPerType[0] + x_numOutputsPerType[1] + x_numOutputsPerType[2] + x_numOutputsPerType[3]
     };
 
     static constexpr size_t GetOutputId(OutputType outputType, size_t outputId)
     {
         return x_outputStartPerType[static_cast<int>(outputType)] + outputId;
+    }
+
+    static constexpr size_t GetOperationOutputId(size_t outputId)
+    {
+        return GetOutputId(OutputType::OperationOutput, outputId);
     }
 
     static constexpr size_t GetMainOutputId(size_t outputId)
@@ -144,6 +163,11 @@ namespace LogicMatrixConstants
         return GetOutputId(OutputType::TriggerOutput, outputId);
     }
 
+    static constexpr size_t GetCVOutputId(size_t outputId)
+    {
+        return GetOutputId(OutputType::CVOutput, outputId);
+    }
+
     static constexpr size_t GetNumOutputs()
     {
         return x_outputStartPerType[static_cast<int>(OutputType::NumOutputTypes)];
@@ -151,22 +175,28 @@ namespace LogicMatrixConstants
 
     enum class LightType : int
     {
-        InputLight,
-        EquationLight,
-        NumLightTypes,
+        InputLight = 0,
+        OperationLight = 1,
+        TriggerLight = 2,
+        CVLight = 3,
+        NumLightTypes = 4
     };
 
     static constexpr size_t x_numLightsPerType[] =
     {
         x_numInputs,
-        x_numEquations
+        x_numOperations,
+        x_numAccumulators,
+        x_numAccumulators
     };
 
     static constexpr size_t x_lightStartPerType[] =
     {
         0,
         x_numLightsPerType[0],
-        x_numLightsPerType[0] + x_numLightsPerType[1]
+        x_numLightsPerType[0] + x_numLightsPerType[1],
+        x_numLightsPerType[0] + x_numLightsPerType[1] + x_numLightsPerType[2],
+        x_numLightsPerType[0] + x_numLightsPerType[1] + x_numLightsPerType[2] + x_numLightsPerType[3],
     };
 
     static constexpr size_t GetLightId(LightType lightType, size_t lightId)
@@ -179,9 +209,19 @@ namespace LogicMatrixConstants
         return GetLightId(LightType::InputLight, lightId);
     }
 
-    static constexpr size_t GetEquationLightId(size_t lightId)
+    static constexpr size_t GetOperationLightId(size_t lightId)
     {
-        return GetLightId(LightType::EquationLight, lightId);
+        return GetLightId(LightType::OperationLight, lightId);
+    }
+
+    static constexpr size_t GetTriggerLightId(size_t lightId)
+    {
+        return GetLightId(LightType::TriggerLight, lightId);
+    }
+
+    static constexpr size_t GetCVLightId(size_t lightId)
+    {
+        return GetLightId(LightType::CVLight, lightId);
     }
 
     static constexpr size_t GetNumLights()
