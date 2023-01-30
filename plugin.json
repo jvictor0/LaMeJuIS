@@ -18,6 +18,13 @@
       "name": "LogicMatrix",
       "description": "Logic Matrix and Just Intonation Sequencer",
       "tags": []
+    },
+    {
+      "slug": "LatticeExpander",
+      "name": "LatticeExpander",
+      "description": "Blinkin Lights for Lattice Orientation",
+      "tags": []
     }
+
   ]
 }

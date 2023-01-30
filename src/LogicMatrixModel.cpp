@@ -193,5 +193,4 @@ struct LogicMatrixWidget : ModuleWidget
 	}
 };
 
-
 Model* modelLogicMatrix = createModel<LogicMatrix, LogicMatrixWidget>("LogicMatrix");

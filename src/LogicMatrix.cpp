@@ -181,6 +181,7 @@ bool LogicMatrix::InputVectorIterator::Done()
 }
 
 constexpr float LogicMatrix::Accumulator::x_voltages[];
+constexpr int LogicMatrix::Accumulator::x_semitones[];
 
 LogicMatrix::Accumulator::Interval
 LogicMatrix::Accumulator::GetInterval()
@@ -279,6 +280,9 @@ LogicMatrix::LogicMatrix()
             &lights[GetTriggerLightId(i)],
             &params[GetPitchPercentileKnobId(i)]);
     }
+
+    rightExpander.producerMessage = m_rightMessages[0];
+    rightExpander.consumerMessage = m_rightMessages[1];
 }
 
 LogicMatrix::InputVector
@@ -312,11 +316,19 @@ void LogicMatrix::ProcessOutputs(InputVector defaultVector, float dt)
 {
     using namespace LogicMatrixConstants;
 
+    LatticeExpanderMessage msg;
+
     for (size_t i = 0; i < x_numAccumulators; ++i)
     {
         MatrixEvalResult res = m_outputs[i].ComputePitch(this, defaultVector);
         m_outputs[i].SetPitch(res.m_pitch, dt);
+        for (size_t j = 0; j < x_numAccumulators; ++j)
+        {
+            msg.m_position[i][j] = res.m_high[j];
+        }
     }
+
+    SendExpanderMessage(msg);
 }
 
 void LogicMatrix::ProcessCVOuts(InputVector defaultVector)

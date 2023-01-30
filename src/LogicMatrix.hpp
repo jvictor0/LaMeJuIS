@@ -1,9 +1,13 @@
+#pragma once
 #include "plugin.hpp"
 #include <cstddef>
 #include "LogicMatrixConstants.hpp"
+#include "LatticeExpander.hpp"
 
 struct LogicMatrix : Module
 {
+    LatticeExpanderMessage m_rightMessages[2][1];
+    
     struct Input
     {
         rack::engine::Input* m_port = nullptr;
@@ -174,12 +178,31 @@ struct LogicMatrix : Module
             1.0 /*octave = log_2(2)*/
         };
 
+        // Fake semitones map for the expander.
+        //
+        static constexpr int x_semitones[] = {
+            0 /*Off*/,
+            1 /*half step*/,
+            2 /*whole tone*/,
+            3 /*minor third*/,
+            4 /*major third = log_2(5/4)*/,
+            5 /*perfect fourth*/,
+            7 /*pefect fifth*/,
+            10 /*minor seventh*/,
+            0 /*octave*/
+        };
+        
         rack::engine::Param* m_intervalKnob = nullptr;
         rack::engine::Output* m_cvOutput = nullptr;
         rack::engine::Light* m_cvOutLight = nullptr;
 
         Interval GetInterval();
-        
+
+        int GetSemitones()
+        {
+            return x_semitones[static_cast<int>(GetInterval())];
+        }
+
         float GetPitch();
 
         void Init(
@@ -334,6 +357,22 @@ struct LogicMatrix : Module
     void ProcessOperations(InputVector defaultVector);
     void ProcessCVOuts(InputVector defaultVector);
     void ProcessOutputs(InputVector defaultVector, float dt);
+
+    void SendExpanderMessage(LatticeExpanderMessage msg)
+    {
+        using namespace LogicMatrixConstants;           
+
+        for (size_t i = 0; i < x_numAccumulators; ++i)
+        {
+            msg.m_intervalSemitones[i] = m_accumulators[i].GetSemitones();
+        }
+        
+        if (rightExpander.module && rightExpander.module->model == modelLatticeExpander)
+        {
+            *static_cast<LatticeExpanderMessage*>(rightExpander.module->leftExpander.producerMessage) = msg;
+            rightExpander.module->leftExpander.messageFlipRequested = true;
+        }
+    }
     
 	LogicMatrix();
 
