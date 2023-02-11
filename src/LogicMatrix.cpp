@@ -192,7 +192,7 @@ LogicMatrix::Accumulator::GetInterval()
 float
 LogicMatrix::Accumulator::GetPitch()
 {
-    return x_voltages[static_cast<size_t>(GetInterval())];
+    return x_voltages[static_cast<size_t>(GetInterval())] + m_intervalCV->getVoltage();
 }
 
 LogicMatrix::MatrixEvalResult
@@ -210,7 +210,7 @@ LogicMatrix::Output::ComputePitch(LogicMatrix* matrix, LogicMatrix::InputVector 
     size_t numResults = itr.m_ordinal;
     std::sort(preResult, preResult + numResults);
 
-    float percentile = m_coMuteState.m_percentileKnob->getValue();
+    float percentile = m_coMuteState.GetPercentile();
     ssize_t ix = static_cast<size_t>(percentile * numResults);
     ix = std::min<ssize_t>(ix, numResults - 1);
     ix = std::max<ssize_t>(ix, 0);
@@ -264,21 +264,21 @@ LogicMatrix::LogicMatrix()
         configParam(GetPitchPercentileKnobId(i), 0.f, 1.f, 0.f, "Voice Percentile Knob " + std::to_string(i));
 
         configInput(GetIntervalCVInputId(i), "Interval CV In " + std::to_string(i));
+        configInput(GetPitchPercentileCVInputId(i), "Pitch Percentile CV in " + std::to_string(i));
 
-        configOutput(GetMainOutputId(i), "");
-        configOutput(GetTriggerOutputId(i), "");
-        configOutput(GetCVOutputId(i), "");
+        configOutput(GetMainOutputId(i), "Pitch Out " + std::to_string(i));
+        configOutput(GetTriggerOutputId(i), "Trigger " + std::to_string(i));
 
         m_accumulators[i].Init(
             &params[GetAccumulatorIntervalKnobId(i)],
-            &outputs[GetCVOutputId(i)],
-            &lights[GetCVLightId(i)]);
+            &inputs[GetIntervalCVInputId(i)]);
 
         m_outputs[i].Init(
             &outputs[GetMainOutputId(i)],
             &outputs[GetTriggerOutputId(i)],
             &lights[GetTriggerLightId(i)],
-            &params[GetPitchPercentileKnobId(i)]);
+            &params[GetPitchPercentileKnobId(i)],
+            &inputs[GetPitchPercentileCVInputId(i)]);
     }
 
     rightExpander.producerMessage = m_rightMessages[0];
@@ -331,28 +331,9 @@ void LogicMatrix::ProcessOutputs(InputVector defaultVector, float dt)
     SendExpanderMessage(msg);
 }
 
-void LogicMatrix::ProcessCVOuts(InputVector defaultVector)
-{
-    using namespace LogicMatrixConstants;
-
-    MatrixEvalResult result = EvalMatrix(defaultVector);
-    for (size_t i = 0; i < x_numAccumulators; ++i)
-    {
-        float value = 0.f;
-        if (result.m_total[i] != 0)
-        {
-            value = static_cast<float>(result.m_high[i]) / result.m_total[i];
-        }
-
-        m_accumulators[i].m_cvOutput->setVoltage(5.f * value);
-        m_accumulators[i].m_cvOutLight->setBrightness(value);
-    }
-}
-
 void LogicMatrix::process(const ProcessArgs& args)
 {
     InputVector defaultVector = ProcessInputs();
     ProcessOperations(defaultVector);
-    ProcessCVOuts(defaultVector);
     ProcessOutputs(defaultVector, args.sampleTime);
 }

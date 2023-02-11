@@ -80,13 +80,15 @@ namespace LogicMatrixConstants
     enum class InputType : int
     {
         MainInput = 0,
-        IntervalCVInput = 1,
-        NumInputTypes = 2,
+        PitchPercentileCV = 1,
+        IntervalCV = 2,
+        NumInputTypes = 3,
     };
 
     static constexpr size_t x_numInputsPerType[] =
     {
         x_numInputs,
+        x_numAccumulators,
         x_numAccumulators
     };
 
@@ -94,7 +96,8 @@ namespace LogicMatrixConstants
     {
         0,
         x_numInputsPerType[0],
-        x_numInputsPerType[0] + x_numInputsPerType[1]
+        x_numInputsPerType[0] + x_numInputsPerType[1],
+        x_numInputsPerType[0] + x_numInputsPerType[1] + x_numInputsPerType[2]
     };
 
     static constexpr size_t GetInputId(InputType inputType, size_t inputId)
@@ -107,9 +110,14 @@ namespace LogicMatrixConstants
         return GetInputId(InputType::MainInput, inputId);
     }
 
+    static constexpr size_t GetPitchPercentileCVInputId(size_t accumulatorId)
+    {
+        return GetInputId(InputType::PitchPercentileCV, accumulatorId);
+    }
+
     static constexpr size_t GetIntervalCVInputId(size_t accumulatorId)
     {
-        return GetInputId(InputType::IntervalCVInput, accumulatorId);
+        return GetInputId(InputType::IntervalCV, accumulatorId);
     }
 
     static constexpr size_t GetNumInputs()
@@ -122,14 +130,12 @@ namespace LogicMatrixConstants
         OperationOutput = 0,
         MainOutput = 1,
         TriggerOutput = 2,
-        CVOutput = 3,
-        NumOutputTypes = 4
+        NumOutputTypes = 3
     };
 
     static constexpr size_t x_numOutputsPerType[] =
     {
         x_numOperations,
-        x_numAccumulators,
         x_numAccumulators,
         x_numAccumulators
     };
@@ -140,7 +146,6 @@ namespace LogicMatrixConstants
         x_numOutputsPerType[0],
         x_numOutputsPerType[0] + x_numOutputsPerType[1],
         x_numOutputsPerType[0] + x_numOutputsPerType[1] + x_numOutputsPerType[2],
-        x_numOutputsPerType[0] + x_numOutputsPerType[1] + x_numOutputsPerType[2] + x_numOutputsPerType[3]
     };
 
     static constexpr size_t GetOutputId(OutputType outputType, size_t outputId)
@@ -163,11 +168,6 @@ namespace LogicMatrixConstants
         return GetOutputId(OutputType::TriggerOutput, outputId);
     }
 
-    static constexpr size_t GetCVOutputId(size_t outputId)
-    {
-        return GetOutputId(OutputType::CVOutput, outputId);
-    }
-
     static constexpr size_t GetNumOutputs()
     {
         return x_outputStartPerType[static_cast<int>(OutputType::NumOutputTypes)];
@@ -178,15 +178,13 @@ namespace LogicMatrixConstants
         InputLight = 0,
         OperationLight = 1,
         TriggerLight = 2,
-        CVLight = 3,
-        NumLightTypes = 4
+        NumLightTypes = 3
     };
 
     static constexpr size_t x_numLightsPerType[] =
     {
         x_numInputs,
         x_numOperations,
-        x_numAccumulators,
         x_numAccumulators
     };
 
@@ -195,8 +193,7 @@ namespace LogicMatrixConstants
         0,
         x_numLightsPerType[0],
         x_numLightsPerType[0] + x_numLightsPerType[1],
-        x_numLightsPerType[0] + x_numLightsPerType[1] + x_numLightsPerType[2],
-        x_numLightsPerType[0] + x_numLightsPerType[1] + x_numLightsPerType[2] + x_numLightsPerType[3],
+        x_numLightsPerType[0] + x_numLightsPerType[1] + x_numLightsPerType[2]
     };
 
     static constexpr size_t GetLightId(LightType lightType, size_t lightId)
@@ -217,11 +214,6 @@ namespace LogicMatrixConstants
     static constexpr size_t GetTriggerLightId(size_t lightId)
     {
         return GetLightId(LightType::TriggerLight, lightId);
-    }
-
-    static constexpr size_t GetCVLightId(size_t lightId)
-    {
-        return GetLightId(LightType::CVLight, lightId);
     }
 
     static constexpr size_t GetNumLights()

@@ -193,8 +193,7 @@ struct LogicMatrix : Module
         };
         
         rack::engine::Param* m_intervalKnob = nullptr;
-        rack::engine::Output* m_cvOutput = nullptr;
-        rack::engine::Light* m_cvOutLight = nullptr;
+        rack::engine::Input* m_intervalCV = nullptr;
 
         Interval GetInterval();
 
@@ -207,12 +206,10 @@ struct LogicMatrix : Module
 
         void Init(
             rack::engine::Param* intervalKnob,
-            rack::engine::Output* cvOutput,
-            rack::engine::Light* cvOutLight)
+            rack::engine::Input* intervalCV)
         {
             m_intervalKnob = intervalKnob;
-            m_cvOutput = cvOutput;
-            m_cvOutLight = cvOutLight;
+            m_intervalCV = intervalCV;
         }
     };
 
@@ -299,13 +296,25 @@ struct LogicMatrix : Module
             return result;
         }
 
-        void Init(rack::engine::Param* percentileKnob)
+        void Init(
+            rack::engine::Param* percentileKnob,
+            rack::engine::Input* percentileCV)
         {
             m_percentileKnob = percentileKnob;
+            m_percentileCV = percentileCV;
+        }
+
+        float GetPercentile()
+        {
+            float result = m_percentileKnob->getValue() + m_percentileCV->getVoltage() / 5.0;
+            result = std::min(result, 1.f);
+            result = std::max(result, 0.f);
+            return result;
         }
         
         CoMuteSwitch m_switches[LogicMatrixConstants::x_numInputs];
         rack::engine::Param* m_percentileKnob = nullptr;
+        rack::engine::Input* m_percentileCV = nullptr;
     };
 
     struct Output
@@ -344,18 +353,18 @@ struct LogicMatrix : Module
             rack::engine::Output* mainOut,
             rack::engine::Output* triggerOut,
             rack::engine::Light* triggerLight,
-            rack::engine::Param* percentileKnob)
+            rack::engine::Param* percentileKnob,
+            rack::engine::Input* percentileCV)
         {
             m_mainOut = mainOut;
             m_triggerOut = triggerOut;
             m_triggerLight = triggerLight;
-            m_coMuteState.Init(percentileKnob);
+            m_coMuteState.Init(percentileKnob, percentileCV);
         }
     };
 
     InputVector ProcessInputs();
     void ProcessOperations(InputVector defaultVector);
-    void ProcessCVOuts(InputVector defaultVector);
     void ProcessOutputs(InputVector defaultVector, float dt);
 
     void SendExpanderMessage(LatticeExpanderMessage msg)

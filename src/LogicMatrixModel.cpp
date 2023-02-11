@@ -6,30 +6,33 @@ struct LogicMatrixWidget : ModuleWidget
 
     static constexpr float x_jackLightOffsetHP = 1.0;
     static constexpr float x_jackStartYHP = 4.25;
-    static constexpr float x_jackSpacingHP = 3.0;
+    static constexpr float x_jackSpacingXHP = 2.5;
+    static constexpr float x_jackSpacingYHP = 3.0;
 
-    static constexpr float x_firstMatrixSwitchXHP = 15.0;
-    static constexpr float x_firstMatrixSwitchYHP = 3.5;
+    static constexpr float x_firstMatrixSwitchXHP = 13.25;
+    static constexpr float x_firstMatrixSwitchYHP = 3.35;
     static constexpr float x_switchSpacingXHP = 1.5;
     static constexpr float x_rowYSpacing = 3.5;
 
-    static constexpr float x_operationKnobXHP = 25.25;
-    static constexpr float x_firstOperatorKnobYHP = 3.25;
+    static constexpr float x_operationKnobXHP = 23.5;
+    static constexpr float x_firstOperatorKnobYHP = 3.15;
 
-    static constexpr float x_operationSwitchXHP = 27.5;
+    static constexpr float x_operationSwitchXHP = 25.75;
 
-    static constexpr float x_firstKnobMatrixXHP = 31.75;
-    static constexpr float x_firstKnobMatrixYHP = 3.50;
-    static constexpr float x_knobMatrixSpacingXHP = 4.5;
+    static constexpr float x_firstKnobMatrixXHP = 30.375;
+    static constexpr float x_firstKnobMatrixYHP = 2.825;
     static constexpr float x_knobMatrixSpacingYHP = 4.0;
 
-    static constexpr float x_firstCoMuteXHP = 31.0;
-    static constexpr float x_firstCoMuteYHP = 16.0;
+    static constexpr float x_secondKnobMatrixXHP = 35.25;
+    static constexpr float x_secondKnobMatrixYHP = 4.0;
+    
+    static constexpr float x_firstCoMuteXHP = 29.5;
+    static constexpr float x_firstCoMuteYHP = 15.75;
 
     Vec GetInputJackMM(size_t inputId)
     {
-        return Vec(x_hp,
-                   x_hp * (x_jackStartYHP + inputId * x_jackSpacingHP));
+        return Vec(x_hp + 2.5,
+                   x_hp * (x_jackStartYHP + inputId * x_jackSpacingYHP));
     }
 
     Vec JackToLight(Vec jackPos)
@@ -39,27 +42,27 @@ struct LogicMatrixWidget : ModuleWidget
 
     Vec GetOperationOutputJackMM(size_t operationId)
     {
-        return GetInputJackMM(operationId).plus(Vec(x_hp * x_jackSpacingHP, 0));
+        return GetInputJackMM(operationId).plus(Vec(x_hp * x_jackSpacingXHP, 0));
     }
 
     Vec GetMainOutputJackMM(size_t accumulatorId)
     {
-        return GetInputJackMM(2 * accumulatorId).plus(Vec(2 * x_hp * x_jackSpacingHP, 0));
+        return GetInputJackMM(2 * accumulatorId).plus(Vec(2 * x_hp * x_jackSpacingXHP, 0));
     }
 
     Vec GetTriggerOutputJackMM(size_t accumulatorId)
     {
-        return GetInputJackMM(2 * accumulatorId + 1).plus(Vec(2 * x_hp * x_jackSpacingHP, 0));
+        return GetInputJackMM(2 * accumulatorId + 1).plus(Vec(2 * x_hp * x_jackSpacingXHP, 0));
     }
 
-    Vec GetCVOutputJackMM(size_t accumulatorId)
+    Vec GetPitchPercentileJackMM(size_t accumulatorId)
     {
-        return GetInputJackMM(accumulatorId).plus(Vec(3 * x_hp * x_jackSpacingHP, 0));
+        return GetInputJackMM(accumulatorId).plus(Vec(3 * x_hp * x_jackSpacingXHP, 0));
     }
 
     Vec GetIntervalInputJackMM(size_t accumulatorId)
     {
-        return GetInputJackMM(accumulatorId + 3).plus(Vec(3 * x_hp * x_jackSpacingHP, 0));
+        return GetInputJackMM(accumulatorId + 3).plus(Vec(3 * x_hp * x_jackSpacingXHP, 0));
     }
     
     Vec GetMatrixSwitchMM(size_t inputId, size_t operationId)
@@ -80,10 +83,16 @@ struct LogicMatrixWidget : ModuleWidget
                    x_hp * (x_firstMatrixSwitchYHP + operationId * x_rowYSpacing));
     }
 
-    Vec GetKnobMatrixMM(size_t knobColumn, size_t accumulatorId)
+    Vec GetIntervalKnobMM(size_t accumulatorId)
     {
-        return Vec(x_hp * (x_firstKnobMatrixXHP + knobColumn * x_knobMatrixSpacingXHP),
+        return Vec(x_hp * x_firstKnobMatrixXHP,
                    x_hp * (x_firstKnobMatrixYHP + accumulatorId * x_knobMatrixSpacingYHP));
+    }
+
+    Vec GetPercentileKnobMM(size_t accumulatorId)
+    {
+        return Vec(x_hp * x_secondKnobMatrixXHP,
+                   x_hp * (x_secondKnobMatrixYHP + accumulatorId * x_knobMatrixSpacingYHP));
     }
 
     Vec GetCoMuteSwitchMM(size_t inputId, size_t accumulatorId)
@@ -167,25 +176,22 @@ struct LogicMatrixWidget : ModuleWidget
                          mm2px(JackToLight(GetTriggerOutputJackMM(i))),
                          module,
                          GetTriggerLightId(i)));
-            addOutput(createOutputCentered<PJ301MPort>(
-                          mm2px(GetCVOutputJackMM(i)),
-                          module,
-                          GetCVOutputId(i)));
-            addChild(createLightCentered<MediumLight<RedLight>>(
-                         mm2px(JackToLight(GetCVOutputJackMM(i))),
-                         module,
-                         GetCVLightId(i)));
+
             addInput(createInputCentered<PJ301MPort>(
                          mm2px(GetIntervalInputJackMM(i)),
                          module,
                          GetIntervalCVInputId(i)));
+            addInput(createInputCentered<PJ301MPort>(
+                          mm2px(GetPitchPercentileJackMM(i)),
+                          module,
+                          GetPitchPercentileCVInputId(i)));
             
             addParam(createParamCentered<RoundBlackSnapKnob>(
-                         mm2px(GetKnobMatrixMM(0, i)),
+                         mm2px(GetIntervalKnobMM(i)),
                          module,
                          GetAccumulatorIntervalKnobId(i)));
             addParam(createParamCentered<RoundBlackKnob>(
-                         mm2px(GetKnobMatrixMM(1, i)),
+                         mm2px(GetPercentileKnobMM(i)),
                          module,
                          GetPitchPercentileKnobId(i)));
 
